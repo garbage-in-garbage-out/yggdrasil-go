@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - in case of vulnerabilities.
 -->
 
+## [Unreleased]
+
+### Added
+
+* Support for isolated networks secured by a shared secret. Nodes configured with the shared secret only connect to other members of the isolated network and refuse to bridge to the public mesh.
+
 ## [0.5.12] - 2024-12-18
 
 * Go 1.22 is now required to build Yggdrasil

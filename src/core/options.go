@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 func (c *Core) _applyOption(opt SetupOption) (err error) {
@@ -35,6 +37,15 @@ func (c *Core) _applyOption(opt SetupOption) (err error) {
 		pk := [32]byte{}
 		copy(pk[:], v)
 		c.config._allowedPublicKeys[pk] = struct{}{}
+	case SharedSecret:
+		if len(v) > blake2b.Size {
+			return fmt.Errorf("shared secret must be at most %d bytes", blake2b.Size)
+		}
+		if len(v) == 0 {
+			c.networkSecret = nil
+		} else {
+			c.networkSecret = append([]byte(nil), v...)
+		}
 	}
 	return
 }
@@ -52,6 +63,7 @@ type NodeInfo map[string]interface{}
 type NodeInfoPrivacy bool
 type AllowedPublicKey ed25519.PublicKey
 type PeerFilter func(net.IP) bool
+type SharedSecret []byte
 
 func (a ListenAddress) isSetupOption()    {}
 func (a Peer) isSetupOption()             {}
@@ -59,3 +71,4 @@ func (a NodeInfo) isSetupOption()         {}
 func (a NodeInfoPrivacy) isSetupOption()  {}
 func (a AllowedPublicKey) isSetupOption() {}
 func (a PeerFilter) isSetupOption()       {}
+func (a SharedSecret) isSetupOption()     {}

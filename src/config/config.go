@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/hjson/hjson-go/v4"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -54,6 +55,14 @@ type NodeConfig struct {
 	LogLookups          bool                       `json:",omitempty"`
 	NodeInfoPrivacy     bool                       `comment:"By default, nodeinfo contains some defaults including the platform,\narchitecture and Yggdrasil version. These can help when surveying\nthe network and diagnosing network routing problems. Enabling\nnodeinfo privacy prevents this, so that only items specified in\n\"NodeInfo\" are sent back if specified."`
 	NodeInfo            map[string]interface{}     `comment:"Optional nodeinfo. This must be a { \"key\": \"value\", ... } map\nor set as null. This is entirely optional but, if set, is visible\nto the whole network on request."`
+	IsolatedNetwork     IsolatedNetworkConfig      `comment:"Settings for running this node as part of an isolated network."`
+}
+
+// IsolatedNetworkConfig controls the behaviour of a node that should only
+// connect to other nodes within the same isolated overlay.
+type IsolatedNetworkConfig struct {
+	Enabled      bool   `comment:"Set to true to require a shared secret for all peerings so that this node only joins the isolated network."`
+	SharedSecret string `json:",omitempty" comment:"Shared secret string for isolated networks. Must match other nodes and be at most 64 bytes."`
 }
 
 type MulticastInterfaceConfig struct {
@@ -83,6 +92,7 @@ func GenerateConfig() *NodeConfig {
 	cfg.IfName = defaults.DefaultIfName
 	cfg.IfMTU = defaults.DefaultIfMTU
 	cfg.NodeInfoPrivacy = false
+	cfg.IsolatedNetwork = IsolatedNetworkConfig{}
 	if err := cfg.postprocessConfig(); err != nil {
 		panic(err)
 	}
@@ -147,6 +157,28 @@ func (cfg *NodeConfig) postprocessConfig() error {
 		// was parsed.
 		if err := cfg.GenerateSelfSignedCertificate(); err != nil {
 			return err
+		}
+	}
+
+	if cfg.IsolatedNetwork.SharedSecret != "" && !cfg.IsolatedNetwork.Enabled {
+		cfg.IsolatedNetwork.Enabled = true
+	}
+	if cfg.IsolatedNetwork.Enabled {
+		if cfg.IsolatedNetwork.SharedSecret == "" {
+			return fmt.Errorf("isolated network enabled but no shared secret configured")
+		}
+		if len(cfg.IsolatedNetwork.SharedSecret) > blake2b.Size {
+			return fmt.Errorf("isolated network shared secret must be at most %d bytes", blake2b.Size)
+		}
+		for i := range cfg.MulticastInterfaces {
+			switch cfg.MulticastInterfaces[i].Password {
+			case "":
+				cfg.MulticastInterfaces[i].Password = cfg.IsolatedNetwork.SharedSecret
+			case cfg.IsolatedNetwork.SharedSecret:
+				// Already matches the shared secret.
+			default:
+				return fmt.Errorf("multicast interface %q password must match isolated network shared secret", cfg.MulticastInterfaces[i].Regex)
+			}
 		}
 	}
 	return nil

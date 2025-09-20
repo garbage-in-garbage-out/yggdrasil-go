@@ -204,6 +204,9 @@ func main() {
 				return !iprange.Contains(ip)
 			}),
 		}
+		if cfg.IsolatedNetwork.Enabled {
+			options = append(options, core.SharedSecret([]byte(cfg.IsolatedNetwork.SharedSecret)))
+		}
 		for _, addr := range cfg.Listen {
 			options = append(options, core.ListenAddress(addr))
 		}
