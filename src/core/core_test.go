@@ -46,6 +46,20 @@ func require_True(t *testing.T, a bool) {
 	}
 }
 
+func createNodeWithSharedSecret(t testing.TB, secret string) *Core {
+	cfg := config.GenerateConfig()
+	logger := GetLoggerWithPrefix("", false)
+	opts := []SetupOption{}
+	if secret != "" {
+		opts = append(opts, SharedSecret([]byte(secret)))
+	}
+	node, err := New(cfg.Certificate, logger, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return node
+}
+
 // CreateAndConnectTwo creates two nodes. nodeB connects to nodeA.
 // Verbosity flag is passed to logger.
 func CreateAndConnectTwo(t testing.TB, verbose bool) (nodeA *Core, nodeB *Core) {
@@ -95,6 +109,54 @@ func CreateAndConnectTwo(t testing.TB, verbose bool) (nodeA *Core, nodeB *Core) 
 	}
 
 	return nodeA, nodeB
+}
+
+func TestSharedSecretAllowsConnections(t *testing.T) {
+	nodeA := createNodeWithSharedSecret(t, "shared-secret")
+	t.Cleanup(nodeA.Stop)
+	nodeB := createNodeWithSharedSecret(t, "shared-secret")
+	t.Cleanup(nodeB.Stop)
+
+	listenURL, err := url.Parse("tcp://localhost:0")
+	require_NoError(t, err)
+	listener, err := nodeA.Listen(listenURL, "")
+	require_NoError(t, err)
+	t.Cleanup(listener.Cancel)
+
+	dialURL, err := url.Parse("tcp://" + listener.Addr().String())
+	require_NoError(t, err)
+	require_NoError(t, nodeB.CallPeer(dialURL, ""))
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if len(nodeA.GetPeers()) == 1 && len(nodeB.GetPeers()) == 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected nodes to connect with shared secret; peers: %d %d", len(nodeA.GetPeers()), len(nodeB.GetPeers()))
+}
+
+func TestSharedSecretBlocksMismatchedNodes(t *testing.T) {
+	nodeA := createNodeWithSharedSecret(t, "shared-secret")
+	t.Cleanup(nodeA.Stop)
+	nodeB := createNodeWithSharedSecret(t, "")
+	t.Cleanup(nodeB.Stop)
+
+	listenURL, err := url.Parse("tcp://localhost:0")
+	require_NoError(t, err)
+	listener, err := nodeA.Listen(listenURL, "")
+	require_NoError(t, err)
+	t.Cleanup(listener.Cancel)
+
+	dialURL, err := url.Parse("tcp://" + listener.Addr().String())
+	require_NoError(t, err)
+	require_NoError(t, nodeB.CallPeer(dialURL, ""))
+
+	time.Sleep(200 * time.Millisecond)
+	if len(nodeA.GetPeers()) != 0 || len(nodeB.GetPeers()) != 0 {
+		t.Fatalf("unexpected peers established without matching secret: %d %d", len(nodeA.GetPeers()), len(nodeB.GetPeers()))
+	}
 }
 
 // WaitConnected blocks until either nodes negotiated DHT or 5 seconds passed.

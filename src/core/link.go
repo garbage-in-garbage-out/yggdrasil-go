@@ -151,6 +151,7 @@ const ErrLinkNotConfigured = linkError("peer is not configured")
 const ErrLinkPriorityInvalid = linkError("priority value is invalid")
 const ErrLinkPinnedKeyInvalid = linkError("pinned public key is invalid")
 const ErrLinkPasswordInvalid = linkError("invalid password supplied")
+const ErrLinkPasswordMismatch = linkError("password does not match isolated network shared secret")
 const ErrLinkUnrecognisedSchema = linkError("link schema unknown")
 const ErrLinkMaxBackoffInvalid = linkError("max backoff duration invalid")
 const ErrLinkSNINotSupported = linkError("SNI not supported on this link type")
@@ -199,6 +200,13 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 				return
 			}
 			options.password = []byte(p)
+		}
+		if secret := l.core.networkSecret; len(secret) > 0 {
+			if len(options.password) > 0 && !bytes.Equal(options.password, secret) {
+				retErr = ErrLinkPasswordMismatch
+				return
+			}
+			options.password = secret
 		}
 		if p := u.Query().Get("maxbackoff"); p != "" {
 			d, err := time.ParseDuration(p)
@@ -479,6 +487,12 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 			return nil, ErrLinkPasswordInvalid
 		}
 		options.password = []byte(p)
+	}
+	if secret := l.core.networkSecret; len(secret) > 0 {
+		if len(options.password) > 0 && !bytes.Equal(options.password, secret) {
+			return nil, ErrLinkPasswordMismatch
+		}
+		options.password = secret
 	}
 
 	phony.Block(l, func() {
